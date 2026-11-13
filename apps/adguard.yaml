@@ -6,7 +6,7 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: https://github.com/DEIN-USER/argocd-homelab.git   # <-- anpassen
+    repoURL: https://github.com/Kiagami/homelab-argocdk3s.git   # <-- anpassen
     targetRevision: main
     path: manifests/adguard
   destination:
