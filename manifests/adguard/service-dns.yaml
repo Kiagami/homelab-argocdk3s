@@ -4,7 +4,7 @@ kind: Service
 metadata:
   name: adguard-dns
   annotations:
-    metallb.universe.tf/loadBalancerIPs: 192.168.7.50   # <-- freie IP aus deinem MetalLB-Pool
+    metallb.universe.tf/loadBalancerIPs: 192.168.7.55   # <-- freie IP aus deinem MetalLB-Pool
 spec:
   type: LoadBalancer
   externalTrafficPolicy: Local   # behaelt Client-IPs fuer die AdGuard-Statistik
