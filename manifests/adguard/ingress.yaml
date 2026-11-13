@@ -3,11 +3,18 @@ kind: Ingress
 metadata:
   name: adguard
   annotations:
-    traefik.ingress.kubernetes.io/router.entrypoints: web
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
+    traefik.ingress.kubernetes.io/router.middlewares: "kube-system-heimnetz-whitelist@kubernetescrd"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
 spec:
   ingressClassName: traefik
+  tls:
+    - hosts:
+        - adguard.kmsystems.ddns.net
+      secretName: adguard-tls-cert
   rules:
-    - host: adguard.kmsystems.ddns.net  # <-- anpassen (DNS-Eintrag auf die Traefik-LB-IP)
+    - host: adguard.kmsystems.ddns.net
       http:
         paths:
           - path: /
