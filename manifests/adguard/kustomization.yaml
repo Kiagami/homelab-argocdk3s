@@ -9,4 +9,4 @@ resources:
   - pdb.yaml
   # Erst aktivieren, wenn alle 3 Pods per Setup-Wizard eingerichtet sind
   # und das Secret adguard-sync-credentials existiert (siehe README):
-  # - sync/deployment.yaml
+  - sync/deployment.yaml
