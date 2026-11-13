@@ -7,7 +7,7 @@ metadata:
 spec:
   ingressClassName: traefik
   rules:
-    - host: adguard.home.lan   # <-- anpassen (DNS-Eintrag auf die Traefik-LB-IP)
+    - host: adguard.kmsystems.ddns.net  # <-- anpassen (DNS-Eintrag auf die Traefik-LB-IP)
       http:
         paths:
           - path: /
