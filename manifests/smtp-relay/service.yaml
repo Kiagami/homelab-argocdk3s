@@ -1,0 +1,10 @@
+# Nur intern erreichbar (ClusterIP), nicht ueber MetalLB/Traefik freigeben.
+apiVersion: v1
+kind: Service
+metadata:
+  name: smtp-relay
+spec:
+  selector:
+    app: smtp-relay
+  ports:
+    - { name: smtp, port: 25, targetPort: 587, protocol: TCP }

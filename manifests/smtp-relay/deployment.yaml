@@ -1,0 +1,54 @@
+# Einfaches SMTP-Relay (Postfix): nimmt Mails aus dem Cluster ohne Auth an
+# und leitet sie authentifiziert an deinen echten Mailanbieter weiter.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: smtp-relay
+  labels:
+    app: smtp-relay
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: smtp-relay
+  template:
+    metadata:
+      labels:
+        app: smtp-relay
+    spec:
+      containers:
+        - name: postfix
+          image: boky/postfix:4.3.0   # auf aktuelle Version pinnen
+          ports:
+            - { name: smtp, containerPort: 587, protocol: TCP }
+          env:
+            # Mailanbieter: [host]:port, die eckigen Klammern verhindern MX-Lookup
+            - { name: RELAYHOST, value: "[smtp.gmail.com]:587" }
+            # Absender-Domains, die das Relay annehmen darf
+            - { name: ALLOWED_SENDER_DOMAINS, value: "gmail.com" }
+            - { name: POSTFIX_myhostname, value: "smtp-relay.kmsystems.ddns.net" }
+            - name: RELAYHOST_USERNAME
+              valueFrom: { secretKeyRef: { name: smtp-relay-credentials, key: username } }
+            - name: RELAYHOST_PASSWORD
+              valueFrom: { secretKeyRef: { name: smtp-relay-credentials, key: password } }
+          readinessProbe:
+            tcpSocket:
+              port: 587
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: 587
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          resources:
+            requests: { cpu: 10m,  memory: 64Mi }
+            limits:   { cpu: 200m, memory: 256Mi }
+          volumeMounts:
+            - { name: spool, mountPath: /var/spool/postfix }
+      volumes:
+        # Mail-Queue geht bei Pod-Neustart verloren. Fuer Alerts ok.
+        - name: spool
+          emptyDir: {}
