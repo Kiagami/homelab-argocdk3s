@@ -144,14 +144,26 @@ kubectl -n smtp-relay run mailtest --rm -it --image=busybox --restart=Never -- \
   sh -c 'echo QUIT | nc smtp-relay 25'
 ```
 
-Testmail senden (Beispiel mit `swaks`):
+Testmail senden, direkt im Relay-Pod (testet Postfix und die Weiterleitung an den Anbieter):
 
 ```bash
-kubectl -n smtp-relay run swaks --rm -it --image=docker.io/cbauer/swaks --restart=Never --command -- \
-  swaks --server smtp-relay.smtp-relay.svc.cluster.local:25 \
-        --from deine.adresse@gmail.com --to empfaenger@example.com \
-        --header "Subject: Relay-Test" --body "Hallo aus k3s"
+kubectl -n smtp-relay exec deploy/smtp-relay -- sh -c \
+  'printf "Subject: Relay-Test\n\nHallo aus k3s\n" | sendmail -f deine.adresse@gmail.com empfaenger@example.com'
 ```
+
+Testmail über den Service senden (testet zusätzlich den Weg aus dem Cluster):
+
+```bash
+kubectl -n smtp-relay run mailtest --rm -i --image=busybox --restart=Never -- sh -c '
+  { sleep 1; echo "HELO test"; sleep 1;
+    echo "MAIL FROM:<deine.adresse@gmail.com>"; sleep 1;
+    echo "RCPT TO:<empfaenger@example.com>"; sleep 1;
+    echo "DATA"; sleep 1;
+    printf "Subject: Relay-Test\r\n\r\nHallo aus k3s\r\n.\r\n"; sleep 2;
+    echo "QUIT"; } | nc smtp-relay 25'
+```
+
+Hinweis: Die Meldungen `lost connection after CONNECT` im Log kommen von den Readiness- und Liveness-Probes (TCP-Check durch kubelet) und sind normal.
 
 Zustellung prüfen:
 
