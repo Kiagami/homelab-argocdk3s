@@ -6,8 +6,7 @@ metadata:
     app: adguard
 spec:
   serviceName: adguard-headless
-  replicas: 3
-  podManagementPolicy: Parallel
+  replicas: 1
   selector:
     matchLabels:
       app: adguard
@@ -16,13 +15,6 @@ spec:
       labels:
         app: adguard
     spec:
-      topologySpreadConstraints:
-        - maxSkew: 1
-          topologyKey: kubernetes.io/hostname
-          whenUnsatisfiable: DoNotSchedule
-          labelSelector:
-            matchLabels:
-              app: adguard
       containers:
         - name: adguard
           image: adguard/adguardhome:v0.107.57   # auf aktuelle Version pinnen
@@ -48,7 +40,7 @@ spec:
         name: work
       spec:
         accessModes: ["ReadWriteOnce"]
-        storageClassName: local-path
+        storageClassName: longhorn
         resources:
           requests:
             storage: 1Gi
@@ -56,7 +48,7 @@ spec:
         name: conf
       spec:
         accessModes: ["ReadWriteOnce"]
-        storageClassName: local-path
+        storageClassName: longhorn
         resources:
           requests:
             storage: 100Mi
