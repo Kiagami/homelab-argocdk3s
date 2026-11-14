@@ -1,54 +1,39 @@
-# argocd-homelab
+# homelab-argocdk3s
+
+AdGuard Home läuft als StatefulSet mit **1 Replica** im Namespace `adguard`, die Daten liegen auf **Longhorn**-Volumes.
+Die Admin-UI ist nur aus dem Heimnetz erreichbar (Traefik-Allowlist, TLS per cert-manager).
+DNS läuft über MetalLB, nicht über Traefik.
 
 ```
 bootstrap/root-app.yaml        # einmalig per kubectl apply
 apps/adguard.yaml              # ArgoCD Application
-manifests/adguard/             # Kustomize: StatefulSet, Services, Ingress, PDB
-manifests/adguard/sync/        # optional: adguardhome-sync
+manifests/adguard/             # Kustomize: StatefulSet, Services, Ingress
 ```
-
-## Installation
-1. Repo auf GitHub/Gitea pushen, `repoURL` in `bootstrap/root-app.yaml` und `apps/adguard.yaml` anpassen.
-2. In `service-dns.yaml` eine freie MetalLB-IP, in `ingress.yaml` den Hostnamen setzen.
-3. `kubectl apply -f bootstrap/root-app.yaml`
-4. Pods starten, sind aber erst "Ready", wenn der Wizard durch ist.
-
-## Erst-Einrichtung (pro Pod einmal)
-```
-kubectl -n adguard port-forward pod/adguard-0 3000:3000   # http://localhost:3000
-kubectl -n adguard port-forward pod/adguard-1 3000:3000
-kubectl -n adguard port-forward pod/adguard-2 3000:3000
-```
-Im Wizard: Admin-Interface Port **80**, DNS Port **53**, auf allen Interfaces.
-Gleichen Benutzernamen/Passwort bei allen drei verwenden.
-
-## Sync aktivieren
-1. Secret `adguard-sync-credentials` anlegen (siehe `sync/secret.example.yaml`).
-2. In `kustomization.yaml` die Zeile `sync/deployment.yaml` einkommentieren, committen.
-Aenderungen nur noch in der UI von adguard-0 machen (Ingress zeigt dorthin).
-# homelab-argocdk3s
-
-
-AdGuard Home läuft als StatefulSet mit 3 Replicas im Namespace `adguard`.
-Die Admin-UI ist nur aus dem Heimnetz erreichbar (Traefik-Allowlist, TLS per cert-manager).
-DNS läuft über MetalLB, nicht über Traefik.
 
 ## Architektur
 
 | Komponente | Datei | Zweck |
 |---|---|---|
-| StatefulSet `adguard` | `statefulset.yaml` | 3 Pods, je eigene PVCs (`work`, `conf`, local-path) |
-| Service `adguard-headless` | `service-ui.yaml` | Stabile Pod-DNS-Namen für den Sync |
-| Service `adguard-ui` | `service-ui.yaml` | Web-UI, zeigt nur auf Pod 0 (Origin) |
+| StatefulSet `adguard` | `statefulset.yaml` | 1 Pod, PVCs `work` (1Gi) und `conf` (100Mi) auf Longhorn |
+| Service `adguard-headless` | `service-ui.yaml` | Headless Service, wird von `serviceName` im StatefulSet benötigt |
+| Service `adguard-ui` | `service-ui.yaml` | Web-UI (Port 80), wählt Pod `adguard-0` |
 | Service `adguard-dns` | `service-dns.yaml` | LoadBalancer via MetalLB, `192.168.7.55`, Port 53 UDP/TCP |
 | Ingress `adguard` | `ingress.yaml` | `adguard.kmsystems.ddns.net`, TLS, Allowlist-Middleware |
-| PodDisruptionBudget | `pdb.yaml` | `minAvailable: 2` |
 | Kustomization | `kustomization.yaml` | Setzt `namespace: adguard` für alle Ressourcen |
 
 Wichtige IPs:
 
 - `192.168.7.55`: DNS-Server für alle Clients (MetalLB, `adguard-dns`)
 - `192.168.7.50`: Traefik-LoadBalancer (Ziel für interne Auflösung der Web-Namen)
+
+Entscheidungen:
+
+- **Ein Pod statt drei:** Es gibt genau ein Query-Log und eine Statistik, keine Replikation der Config nötig.
+  Ein PodDisruptionBudget und `adguardhome-sync` gibt es deshalb nicht mehr.
+- **Longhorn statt `local-path`:** Das Volume ist über mehrere Nodes repliziert, der Pod kann nach einem
+  Node-Ausfall auf einem anderen Node starten.
+- **`externalTrafficPolicy: Local`** am `adguard-dns` Service erhält die Client-IPs für die AdGuard-Statistik.
+  MetalLB kündigt die IP von dem Node an, auf dem der Pod läuft.
 
 ## Deployment
 
@@ -68,7 +53,7 @@ spec:
   source:
     repoURL: https://github.com/<USER>/<REPO>.git
     targetRevision: main
-    path: adguard
+    path: manifests/adguard
   destination:
     server: https://kubernetes.default.svc
     namespace: adguard
@@ -86,14 +71,20 @@ spec:
 ```
 
 `ignoreDifferences` auf `volumeClaimTemplates` verhindert Dauer-OutOfSync bei StatefulSets.
+`prune: true` sorgt dafür, dass aus Git entfernte Ressourcen auch im Cluster gelöscht werden.
+
+## Installation (Neuaufbau)
+
+1. Repo auf GitHub/Gitea pushen, `repoURL` in `bootstrap/root-app.yaml` und `apps/adguard.yaml` anpassen.
+2. In `service-dns.yaml` eine freie MetalLB-IP, in `ingress.yaml` den Hostnamen setzen.
+3. `kubectl apply -f bootstrap/root-app.yaml`
+4. Der Pod startet, ist aber erst "Ready", wenn der Wizard durch ist (oder eine Config wiederhergestellt wurde).
 
 ## Ersteinrichtung (Setup-Wizard)
 
 Vor dem Wizard lauscht AdGuard nur auf Port **3000**. Die `readinessProbe` prüft TCP 53,
-deshalb sind die Pods bis zum Abschluss des Wizards `0/1 Ready`. Das ist erwartet.
-Services haben in dieser Zeit keine Endpoints, Ingress und DNS funktionieren noch nicht.
-
-Jeder Pod hat eigene PVCs und muss einzeln eingerichtet werden.
+deshalb ist der Pod bis zum Abschluss des Wizards `0/1 Ready`. Das ist erwartet.
+Der Service hat in dieser Zeit keine Endpoints, Ingress und DNS funktionieren noch nicht.
 
 ```bash
 kubectl -n adguard get pods
@@ -112,18 +103,18 @@ Im Wizard:
 
 - Admin-Interface: alle Schnittstellen, Port **80**
 - DNS-Server: alle Schnittstellen, Port **53**
-- Gleichen Benutzer und gleiches Passwort für alle 3 Pods setzen (wird für den Sync gebraucht)
-- Die Seite "Configure your devices" ist nur eine Info-Seite (zeigt Pod-IPs), einfach **Next** und **Open Dashboard**
+- Benutzer und starkes Passwort setzen
+- Die Seite "Configure your devices" ist nur eine Info-Seite, einfach **Next** und **Open Dashboard**
 
-Danach dasselbe mit `adguard-1` und `adguard-2`. Nach dem Wizard schließt sich Port 3000 im Pod.
-`connection refused` auf 3000 heißt also: Pod ist bereits eingerichtet.
+Nach dem Wizard schließt sich Port 3000 im Pod. `connection refused` auf 3000 heißt also: Pod ist bereits eingerichtet.
 
-Prüfen, welcher Pod noch offen ist: `0/1` = Wizard fehlt, `1/1` = fertig.
+Prüfen:
 
 ```bash
 kubectl -n adguard get pods -o wide
 kubectl -n adguard get endpoints
 kubectl -n adguard get svc adguard-dns   # EXTERNAL-IP = 192.168.7.55
+kubectl -n adguard get pvc               # STORAGECLASS = longhorn, STATUS = Bound
 ```
 
 Zugriff auf die UI danach über den Ingress oder per Port-Forward auf Port 80:
@@ -133,7 +124,7 @@ kubectl -n adguard port-forward pod/adguard-0 8080:80
 ```
 
 Hinweis: `kubectl port-forward` braucht keine Pod- oder Node-IP. Es läuft über den API-Server
-aus der kubeconfig. Pods auf anderen Nodes sind trotzdem erreichbar.
+aus der kubeconfig, der Pod ist unabhängig vom Node erreichbar.
 
 ## Ingress, TLS und LAN-Beschränkung
 
@@ -190,19 +181,81 @@ Lösung: Im LAN muss der Name direkt auf Traefik zeigen.
 
 - AdGuard: *Filters → DNS rewrites*, `adguard.kmsystems.ddns.net` auf `192.168.7.50`
   (optional Wildcard `*.kmsystems.ddns.net` auf `192.168.7.50` für alle Dienste)
-- Router/DHCP verteilt `192.168.7.55` als DNS-Server, ohne externen Fallback-DNS,
-  sonst umgehen Geräte AdGuard und den Rewrite
+- UniFi/DHCP verteilt `192.168.7.55` als DNS-Server (WAN-DNS und DHCP-DNS pro VLAN), ohne externen
+  Fallback-DNS, sonst umgehen Geräte AdGuard und den Rewrite
 - Kein dauerhafter `/etc/hosts`-Eintrag auf Clients (verdeckt später Fehler)
+
+## Longhorn: Backup und Failover
+
+**Backup**
+
+- In der Longhorn-UI einen Recurring Job (Snapshot und/oder Backup auf ein Backup-Target) für die Volumes
+  `conf-adguard-0` und `work-adguard-0` anlegen. Wichtig ist vor allem `conf`, dort liegt `AdGuardHome.yaml`
+  (Benutzer, Filter, Rewrites, Clients).
+- Manuelle Sicherung der Config:
+  ```bash
+  kubectl -n adguard cp adguard-0:/opt/adguardhome/conf/AdGuardHome.yaml ./AdGuardHome.yaml
+  # Alternative:
+  kubectl -n adguard exec adguard-0 -- cat /opt/adguardhome/conf/AdGuardHome.yaml > AdGuardHome.yaml
+  ```
+  Die Datei enthält den Passwort-Hash: **nicht ins Git**, sicher ablegen.
+
+**Restore der Config in ein leeres `conf`-Volume**
+
+```bash
+kubectl -n adguard cp ./AdGuardHome.yaml adguard-0:/opt/adguardhome/conf/AdGuardHome.yaml
+kubectl -n adguard delete pod adguard-0
+```
+
+Der Pod startet neu, liest die Config statt den Wizard zu starten und wird Ready. Query-Log und Statistik
+liegen im `work`-Volume und sind nur über Longhorn-Backup/Snapshot wiederherstellbar.
+
+**Failover bei Node-Ausfall**
+
+- In den Longhorn-Einstellungen **Pod Deletion Policy When Node is Down** auf `delete-statefulset-pod`
+  setzen. Sonst bleibt der StatefulSet-Pod auf dem toten Node in `Terminating` hängen und startet nicht neu.
+- Auch dann dauert ein Failover einige Minuten (Erkennung, Volume detachen, Pod starten). In dieser Zeit
+  ist DNS nicht erreichbar. Geplante Node-Drains sind meist schneller (unter einer Minute).
+- In der Longhorn-UI prüfen, dass die Volumes mehrere gesunde Replicas haben (Standard: 3).
+
+## Migration von 3 Replicas (`local-path`) auf 1 Replica (Longhorn)
+
+Einmalige Aktion, schon durchgeführt. Zur Dokumentation, falls sie erneut nötig wird:
+`volumeClaimTemplates` eines StatefulSets sind unveränderlich, die Migration geht deshalb nicht allein über Git.
+
+1. Config von `adguard-0` sichern (siehe Backup oben).
+2. Manifeste in Git anpassen (`replicas: 1`, `storageClassName: longhorn`, PDB und `sync/` entfernt,
+   `kustomization.yaml` bereinigt), Änderung pushen.
+3. Auto-Sync der ArgoCD-App pausieren.
+4. Altes StatefulSet und die alten PVCs von Hand löschen:
+   ```bash
+   kubectl -n adguard delete statefulset adguard
+   kubectl -n adguard delete pvc --all
+   kubectl get pv | grep adguard   # Reste im Status Released löschen
+   ```
+5. In ArgoCD mit **Prune** synchronisieren. Das StatefulSet entsteht neu, PVCs kommen von Longhorn.
+6. Config zurückkopieren und Pod neu starten (siehe Restore oben), Auto-Sync wieder aktivieren.
+7. Aufräumen: `kubectl -n adguard get pdb,deploy` darf weder das PDB noch `adguardhome-sync` zeigen,
+   sonst von Hand löschen. Das Secret `adguard-sync-credentials` kann entfernt werden.
+
+Wichtig: Das alte PDB (`minAvailable: 2`) würde bei einem Pod jeden Node-Drain blockieren. Es muss weg sein.
 
 ## Troubleshooting
 
 | Symptom | Ursache | Lösung |
 |---|---|---|
-| Pods `0/1 Ready`, Services ohne Endpoints | Wizard nicht durchlaufen, Probe prüft Port 53 | Wizard pro Pod per Port-Forward auf 3000 abschließen |
-| Portforward auf Nodes landet im Nichts | Port 3000 ist in keinem Service veröffentlicht | `kubectl port-forward pod/adguard-N 3000:3000` nutzen |
-| `connection refused` beim Port-Forward auf 3000 | Pod ist bereits eingerichtet (3000 geschlossen) oder falscher Pod | Nächsten Pod nehmen (`adguard-1`, `-2`), UI dann auf Port 80 |
+| Pod `0/1 Ready`, Service ohne Endpoints | Wizard nicht durchlaufen, Probe prüft Port 53 | Wizard per Port-Forward auf 3000 abschließen oder Config wiederherstellen |
+| Port-Forward auf Nodes landet im Nichts | Port 3000 ist in keinem Service veröffentlicht | `kubectl port-forward pod/adguard-0 3000:3000` nutzen |
+| `connection refused` beim Port-Forward auf 3000 | Pod ist bereits eingerichtet (3000 geschlossen) | UI auf Port 80 nutzen |
 | `localhost:3000` im Browser geht nicht | kubectl läuft auf dem Node, nicht auf dem Notebook | SSH-Tunnel `ssh -L 3000:localhost:3000 root@<node>` |
 | `adguard-dns` EXTERNAL-IP `<pending>` | Kein LoadBalancer-Provider oder IP aus dem Pool nicht verfügbar | MetalLB-Pool und Annotation `metallb.universe.tf/loadBalancerIPs` prüfen |
+| PVC bleibt `Pending` | Longhorn nicht bereit oder StorageClass falsch | `kubectl get sc`, Longhorn-UI und `describe pvc` prüfen |
+| PVC hängt in `Terminating` | Pod nutzt das Volume noch | StatefulSet zuerst löschen, `describe pvc` prüfen |
+| ArgoCD: `evalsymlink failure ... no such file` | `kustomization.yaml` verweist auf gelöschte Datei (z. B. `pdb.yaml`, `sync/deployment.yaml`) | Eintrag entfernen, `kubectl kustomize manifests/adguard` lokal testen |
+| StatefulSet-Sync schlägt fehl (`forbidden`) | `volumeClaimTemplates` geändert | StatefulSet und PVCs von Hand löschen (siehe Migration) |
+| Node-Drain hängt | Altes PDB noch im Cluster | `kubectl -n adguard delete pdb adguard` |
+| Pod startet nach Node-Ausfall nicht neu | Longhorn Pod Deletion Policy nicht gesetzt | Einstellung auf `delete-statefulset-pod` setzen |
+| Keine Queries im Log | Clients nutzen anderen/zweiten DNS, Query-Log deaktiviert | DHCP-DNS prüfen, *Settings → General settings → Query log configuration* |
 | Ingress landet in `default`, 503/404 | Manuelles `kubectl apply` ohne Namespace | Objekte in `default` löschen, nur per ArgoCD/Kustomize deployen |
 | Zwei Ingresses (`adguard` und `cm-acme-http-solver-*`) | Solver ist der temporäre cert-manager-Ingress | Normal, nichts tun |
 | ArgoCD: `authentication required` | Privates Repo ohne Credentials, Token abgelaufen oder Platzhalter-URL | Repo unter *Settings → Repositories* mit Token hinterlegen, `repoURL` exakt prüfen |
@@ -214,12 +267,16 @@ Lösung: Im LAN muss der Name direkt auf Traefik zeigen.
 Nützliche Diagnose:
 
 ```bash
-kubectl -n adguard get pods,svc,endpoints,ingress
+kubectl -n adguard get pods,svc,endpoints,ingress,pvc
+kubectl -n adguard logs adguard-0 --tail=50
 kubectl -n adguard get certificate,order,challenge
 kubectl -n argocd logs deploy/argocd-repo-server --tail=50
 
 # Direkt gegen Traefik testen (umgeht DNS)
 curl -I --resolve adguard.kmsystems.ddns.net:443:192.168.7.50 https://adguard.kmsystems.ddns.net
+
+# DNS testen
+nslookup example.com 192.168.7.55
 ```
 
 ## Sicherheit
@@ -229,26 +286,18 @@ curl -I --resolve adguard.kmsystems.ddns.net:443:192.168.7.50 https://adguard.km
 - Port 53 nicht am Router ins Internet weiterleiten (offener Resolver, Missbrauch für
   DNS-Amplification). Nur 80/443 für Traefik werden benötigt.
 - Starkes Wizard-Passwort verwenden.
-- Secrets (z. B. `adguard-sync-credentials`, Repo-Token) nicht im Klartext ins Git,
-  sondern mit Sealed Secrets oder SOPS.
-
-## Sync der Replicas (optional)
-
-`sync/deployment.yaml` in der `kustomization.yaml` erst aktivieren, wenn
-
-1. alle 3 Pods den Setup-Wizard durchlaufen haben und
-2. das Secret `adguard-sync-credentials` existiert.
-
-Die Web-UI zeigt bewusst nur auf Pod 0 (Origin). Die Konfiguration wird von dort auf die
-anderen Replicas synchronisiert.
+- Config-Backups (`AdGuardHome.yaml`) und Secrets (z. B. Repo-Token) nicht ins Git,
+  Secrets mit Sealed Secrets oder SOPS verwalten.
 
 ## Checkliste neuer Rollout
 
 1. Repo mit Manifesten pushen, ArgoCD-Application anlegen, Sync.
-2. Wizard für `adguard-0`, `-1`, `-2` durchlaufen.
-3. `kubectl -n adguard get pods` zeigt `1/1`, `get svc adguard-dns` zeigt `192.168.7.55`.
-4. `nslookup example.com 192.168.7.55` aus dem LAN liefert eine Antwort.
-5. DNS-Rewrite für den Ingress-Namen auf `192.168.7.50` setzen.
-6. `https://adguard.kmsystems.ddns.net` im LAN erreichbar, Zertifikat gültig.
-7. Von außen testen: 403.
-8. Router-DHCP auf DNS `192.168.7.55` umstellen.
+2. `kubectl -n adguard get pvc` zeigt `work-adguard-0` und `conf-adguard-0` mit `longhorn` und `Bound`.
+3. Wizard für `adguard-0` durchlaufen (oder Config wiederherstellen).
+4. `kubectl -n adguard get pods` zeigt `1/1`, `get svc adguard-dns` zeigt `192.168.7.55`.
+5. `nslookup example.com 192.168.7.55` aus dem LAN liefert eine Antwort.
+6. DNS-Rewrite für den Ingress-Namen auf `192.168.7.50` setzen.
+7. `https://adguard.kmsystems.ddns.net` im LAN erreichbar, Zertifikat gültig.
+8. Von außen testen: 403.
+9. Router-DHCP auf DNS `192.168.7.55` umstellen.
+10. Longhorn Recurring Job für Backups und Pod Deletion Policy einrichten.
