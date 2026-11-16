@@ -1,0 +1,38 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: tailscale-operator
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  sources:
+    # 1. Offizielles Tailscale Operator Helm Chart
+    - repoURL: https://pkgs.tailscale.com/helmcharts
+      chart: tailscale-operator
+      targetRevision: 1.80.3 # Bei Bedarf auf aktuelle Chart-Version anpassen
+      helm:
+        releaseName: tailscale-operator
+        valuesObject:
+          operatorConfig:
+            hostname: k8s-operator
+            defaultTags:
+              - tag:k8s
+
+    # 2. Eigene Manifeste unter manifests/timescale
+    - repoURL: https://github.com/Kiagami/homelab-argocdk3s.git
+      targetRevision: main
+      path: manifests/timescale
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: tailscale
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

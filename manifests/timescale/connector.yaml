@@ -1,0 +1,21 @@
+apiVersion: tailscale.com/v1alpha1
+kind: Connector
+metadata:
+  name: homelab-subnet-router
+  namespace: tailscale
+spec:
+  hostname: k8s-homelab-router
+  tags:
+    - tag:k8s
+  subnetRouter:
+    advertiseRoutes:
+      - "192.168.1.0/24"
+      - "192.168.2.0/24"
+      - "192.168.3.0/24"
+      - "192.168.4.0/24"
+      - "192.168.5.0/24"
+      - "192.168.6.0/24"
+      - "192.168.7.0/24"
+      - "192.168.8.0/24"
+  # Optional aktivieren, falls der Pod auch als Exit Node dienen soll:
+  # exitNode: true
