@@ -92,6 +92,9 @@ kubectl create secret generic operator-oauth \
    ```bash
    tailscale status
    ping -c 3 192.168.2.200
+   sudo tailscale set --accept-routes
+   ip route show table 52
+   sudo tailscale up
    ```
 
 ---
