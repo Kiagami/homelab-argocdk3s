@@ -9,6 +9,13 @@ bootstrap/root-app.yaml        # einmalig per kubectl apply
 apps/adguard.yaml              # ArgoCD Application
 manifests/adguard/             # Kustomize: StatefulSet, Services, Ingress
 ```
+## ToDos Deployments
+- hedgedoc md
+- grafana / prometheus log 
+- openclaw / ai agent 
+- eigene app mit pipeline actions
+- Migration Komponenten zu ArgoCD
+- traefik WAF 
 
 ## Architektur
 
