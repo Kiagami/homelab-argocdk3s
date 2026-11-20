@@ -35,9 +35,6 @@ spec:
     namespace: kube-system
 
   syncPolicy:
-    automated:
-      prune: true
-      selfHeal: true
     syncOptions:
       - ServerSideApply=true
       - SkipDryRunOnMissingResource=true
