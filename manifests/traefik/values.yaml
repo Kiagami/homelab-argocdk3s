@@ -1,14 +1,9 @@
+additionalArguments:
+  - --api.dashboard=true
+  - --log.level=INFO
+  - --entrypoints.websecure.forwardedHeaders.trustedIPs=10.0.0.0/8
+  - 192.168.0.0/16
+
 service:
-  type: LoadBalancer
   externalTrafficPolicy: Local
-
-ports:
-  websecure:
-    forwardedHeaders:
-      trustedIPs:
-        - 10.0.0.0/8
-        - 192.168.0.0/16
-
-ingressRoute:
-  dashboard:
-    enabled: true
+  type: LoadBalancer
