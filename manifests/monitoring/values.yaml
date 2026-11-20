@@ -103,3 +103,82 @@ grafana:
       - secretName: grafana-tls-cert
         hosts:
           - grafana.kmsystems.ddns.net
+
+# --- Eigene Alerts (Nodes, CoreDNS) ---
+# An das Ende von manifests/monitoring/values.yaml anhaengen (Top-Level-Key, nicht verschachteln).
+# Der Chart legt daraus eine PrometheusRule an, Prometheus laedt sie automatisch.
+additionalPrometheusRulesMap:
+  node-alerts:
+    groups:
+      - name: node.custom
+        rules:
+          - alert: NodeNotReady
+            expr: kube_node_status_condition{condition="Ready",status="true"} == 0
+            for: 2m
+            labels:
+              severity: critical
+            annotations:
+              summary: "Node {{ $labels.node }} ist NotReady"
+              description: "Der Node {{ $labels.node }} meldet seit 2 Minuten nicht Ready."
+
+          - alert: NodeExporterDown
+            expr: up{job="node-exporter"} == 0
+            for: 2m
+            labels:
+              severity: critical
+            annotations:
+              summary: "Node-Exporter auf {{ $labels.instance }} nicht erreichbar"
+              description: "Prometheus bekommt seit 2 Minuten keine Metriken von {{ $labels.instance }}."
+
+          - alert: NodeHighCpu
+            expr: 100 - (avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 85
+            for: 15m
+            labels:
+              severity: warning
+            annotations:
+              summary: "Hohe CPU-Last auf {{ $labels.instance }}"
+              description: "CPU-Auslastung seit 15 Minuten ueber 85 % (aktuell {{ $value | printf \"%.0f\" }} %)."
+
+          - alert: NodeHighMemory
+            expr: (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) * 100 > 90
+            for: 10m
+            labels:
+              severity: warning
+            annotations:
+              summary: "Wenig freier RAM auf {{ $labels.instance }}"
+              description: "RAM-Auslastung seit 10 Minuten ueber 90 % (aktuell {{ $value | printf \"%.0f\" }} %)."
+
+          - alert: NodeDiskAlmostFull
+            expr: |
+              (node_filesystem_avail_bytes{mountpoint="/",fstype!~"tmpfs|overlay|squashfs|ramfs"}
+                / node_filesystem_size_bytes{mountpoint="/",fstype!~"tmpfs|overlay|squashfs|ramfs"}) * 100 < 15
+            for: 10m
+            labels:
+              severity: warning
+            annotations:
+              summary: "Root-Dateisystem auf {{ $labels.instance }} fast voll"
+              description: "Weniger als 15 % frei (aktuell {{ $value | printf \"%.0f\" }} % frei)."
+
+# In values.yaml unter den bestehenden Key "additionalPrometheusRulesMap:" einruecken
+# (neben "node-alerts:"), nicht als zweiten Top-Level-Key.
+  coredns-alerts:
+    groups:
+      - name: coredns.custom
+        rules:
+          - alert: CoreDNSLessThanTwoReplicas
+            expr: kube_deployment_status_replicas_available{namespace="kube-system",deployment="coredns"} < 2
+            for: 5m
+            labels:
+              severity: warning
+            annotations:
+              summary: "CoreDNS hat weniger als 2 verfuegbare Replicas"
+              description: "Nur {{ $value }} CoreDNS-Pod(s) verfuegbar. Bei einem Node-Ausfall faellt der Cluster-DNS aus."
+
+          - alert: CoreDNSReplicasOnSameNode
+            expr: count by (node) (kube_pod_info{namespace="kube-system",pod=~"coredns-.*"}) > 1
+            for: 10m
+            labels:
+              severity: warning
+            annotations:
+              summary: "Mehrere CoreDNS-Pods laufen auf {{ $labels.node }}"
+              description: "Die CoreDNS-Pods sind nicht auf verschiedene Nodes verteilt."
