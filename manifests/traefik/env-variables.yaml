@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: traefik-env-variables
+  namespace: kube-system
+data:
+  TRAEFIK_API_DASHBOARD: "true"
+  TRAEFIK_LOG_LEVEL: "INFO"
