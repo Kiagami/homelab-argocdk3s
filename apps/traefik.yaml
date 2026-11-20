@@ -15,7 +15,7 @@ spec:
         releaseName: traefik
         valueFiles:
           - $values/manifests/traefik/values.yaml
-    - repoURL: <DEINE_GIT_REPO_URL>
+    - repoURL: https://github.com/Kiagami/homelab-argocdk3s.git
       targetRevision: main
       ref: values
   destination:
