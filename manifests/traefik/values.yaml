@@ -9,11 +9,6 @@ ports:
         - 10.0.0.0/8
         - 192.168.0.0/16
 
-# Falls dein Chart-Release Dashboard/Log-Level über Helm-Values statt nur über die ConfigMap steuert:
 ingressRoute:
   dashboard:
     enabled: true
-
-logs:
-  general:
-    level: INFO
