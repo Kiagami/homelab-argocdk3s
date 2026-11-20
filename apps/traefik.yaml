@@ -8,7 +8,7 @@ metadata:
 spec:
   project: default
   sources:
-    # 1. Offizielles Traefik Helm Chart
+    # Offizielles Traefik Helm Chart
     - repoURL: https://traefik.github.io/charts
       chart: traefik
       targetRevision: 42.1.3
@@ -24,11 +24,6 @@ spec:
                 trustedIPs:
                   - 10.0.0.0/8
                   - 192.168.0.0/16
-
-    # 2. Eigene Manifeste (Middleware, Certificates, Issuer)
-    - repoURL: https://github.com/Kiagami/homelab-argocdk3s.git
-      targetRevision: main
-      path: manifests/traefik
 
   destination:
     server: https://kubernetes.default.svc
