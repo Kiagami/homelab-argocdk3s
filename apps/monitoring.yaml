@@ -1,0 +1,27 @@
+# kube-prometheus-stack (Prometheus, Alertmanager, Grafana, node-exporter, kube-state-metrics)
+# Multi-Source: Chart aus dem Helm-Repo, values.yaml aus diesem Git-Repo ($values).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: monitoring
+  namespace: argocd
+spec:
+  project: default
+  sources:
+    - repoURL: https://prometheus-community.github.io/helm-charts
+      chart: kube-prometheus-stack
+      targetRevision: 93.2.2   # vor dem Pinnen auf aktuelle Version pruefen
+      helm:
+        releaseName: monitoring
+        valueFiles:
+          - $values/manifests/monitoring/values.yaml
+    - repoURL: https://github.com/Kiagami/homelab-argocdk3s.git
+      targetRevision: main
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true   # noetig wegen der grossen CRDs

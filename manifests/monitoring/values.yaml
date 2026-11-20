@@ -1,0 +1,105 @@
+# Values fuer kube-prometheus-stack auf k3s (Longhorn, Traefik, smtp-relay)
+
+# --- k3s: Control-Plane-Komponenten werden anders bereitgestellt, sonst Dauer-Alerts ---
+kubeEtcd:
+  enabled: false
+kubeScheduler:
+  enabled: false
+kubeControllerManager:
+  enabled: false
+kubeProxy:
+  enabled: false
+
+# --- Prometheus ---
+prometheus:
+  prometheusSpec:
+    retention: 15d
+    retentionSize: 15GB
+    # Auch ServiceMonitors/PodMonitors/Rules aus anderen Namespaces/Charts einsammeln
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+    ruleSelectorNilUsesHelmValues: false
+    probeSelectorNilUsesHelmValues: false
+    resources:
+      requests: { cpu: 200m, memory: 768Mi }
+      limits:   { memory: 2Gi }
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: longhorn
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 20Gi
+
+# --- Alertmanager: Mails ueber das interne smtp-relay ---
+alertmanager:
+  alertmanagerSpec:
+    storage:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: longhorn
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 1Gi
+  config:
+    global:
+      resolve_timeout: 5m
+      smtp_smarthost: 'smtp-relay.smtp-relay.svc.cluster.local:25'
+      smtp_from: 'kianmiertsch@gmail.com'   # bei Gmail: eigene Adresse oder bestaetigter Alias
+      smtp_require_tls: false               # Relay im Cluster, kein TLS noetig
+    route:
+      receiver: mail
+      group_by: ['namespace', 'alertname']
+      group_wait: 30s
+      group_interval: 5m
+      repeat_interval: 12h
+      routes:
+        # Dauer-Testalerts nicht per Mail senden
+        - receiver: "null"
+          matchers:
+            - alertname =~ "Watchdog|InfoInhibitor"
+    receivers:
+      - name: "null"
+      - name: mail
+        email_configs:
+          - to: 'kianmiertsch@gmail.com'
+            send_resolved: true
+
+# --- Grafana ---
+grafana:
+  # Passwort aus Secret (siehe secret.example.yaml), nicht im Git
+  admin:
+    existingSecret: grafana-admin
+    userKey: admin-user
+    passwordKey: admin-password
+  deploymentStrategy:
+    type: Recreate          # RWO-Volume: alter Pod muss weg, bevor der neue startet
+  persistence:
+    enabled: true
+    storageClassName: longhorn
+    accessModes: ["ReadWriteOnce"]
+    size: 2Gi
+  resources:
+    requests: { cpu: 50m, memory: 128Mi }
+    limits:   { memory: 512Mi }
+  grafana.ini:
+    server:
+      domain: grafana.kmsystems.ddns.net
+      root_url: https://grafana.kmsystems.ddns.net
+  ingress:
+    enabled: true
+    ingressClassName: traefik
+    annotations:
+      traefik.ingress.kubernetes.io/router.entrypoints: websecure
+      traefik.ingress.kubernetes.io/router.tls: "true"
+      traefik.ingress.kubernetes.io/router.middlewares: "kube-system-heimnetz-whitelist@kubernetescrd"
+      cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    hosts:
+      - grafana.kmsystems.ddns.net
+    path: /
+    tls:
+      - secretName: grafana-tls-cert
+        hosts:
+          - grafana.kmsystems.ddns.net
