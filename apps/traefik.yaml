@@ -8,38 +8,20 @@ metadata:
 spec:
   project: default
   sources:
-    # Offizielles Traefik Helm Chart
     - repoURL: https://traefik.github.io/charts
       chart: traefik
       targetRevision: 42.1.3
       helm:
         releaseName: traefik
-        valuesObject:
-          service:
-            type: LoadBalancer
-            externalTrafficPolicy: Local
-          ports:
-            websecure:
-              forwardedHeaders:
-                trustedIPs:
-                  - 10.0.0.0/8
-                  - 192.168.0.0/16
-
+        valueFiles:
+          - $values/manifests/traefik/values.yaml
+    - repoURL: <DEINE_GIT_REPO_URL>
+      targetRevision: main
+      ref: values
   destination:
     server: https://kubernetes.default.svc
     namespace: kube-system
-
   syncPolicy:
     syncOptions:
       - ServerSideApply=true
       - SkipDryRunOnMissingResource=true
-
-  template:
-    spec:
-      containers:
-        - name: traefik
-          image: traefik:v2.5
-          envFrom:
-            - configMapRef:
-                name: traefik-env-variables
-
