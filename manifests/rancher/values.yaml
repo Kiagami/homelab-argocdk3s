@@ -1,0 +1,8 @@
+hostname: rancher.kmsystems.ddns.net
+
+ingress:
+  enabled: false
+
+# Set replicas/TLS options here if needed, e.g.:
+# replicas: 1
+# tls: external
